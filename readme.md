@@ -60,12 +60,12 @@ Before running the script, ensure you have the following installed on your syste
 
 2. Make the script executable:
     ```bash
-    chmod +x secure_boot_generator.sh
+    chmod +x SecureBootGenerator.sh
     ```
 
 3. Run the script:
     ```bash
-    sudo ./secure_boot_generator.sh
+    sudo ./SecureBootGenerator.sh
     ```
 
 ### Running the Script with Fish
@@ -78,12 +78,12 @@ Before running the script, ensure you have the following installed on your syste
 
 2. Make the script executable:
     ```fish
-    chmod +x secure_boot_generator.sh
+    chmod +x SecureBootGenerator.fish
     ```
 
 3. Run the script:
     ```fish
-    sudo ./secure_boot_generator.sh
+    sudo ./SecureBootGenerator.fish
     ```
 
 ## Script Details

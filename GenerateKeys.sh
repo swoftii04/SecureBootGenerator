@@ -1,67 +1,107 @@
 #!/bin/bash
 
-# Define key names and directory
-KEY_DIR="/root/secure-boot-keys"
-PK_KEY="PK"
-KEK_KEY="KEK"
-DB_KEY="db"
-CONFIG_FILE="/keys/cfg/PK.cfg"
+# Exit immediately if a command exits with a non-zero status
+set -e
 
-# Function to remove existing keys from the directory
-cleanup_keys() {
-    echo "Removing any existing keys in $KEY_DIR..."
-    rm -f $KEY_DIR/*
-    echo "All existing keys have been removed."
-}
+echo "Starting Secure Boot Key Generation Script..."
 
-# Check Secure Boot state
-SB_STATE=$(mokutil --sb-state | grep -i "SecureBoot enabled")
-if [ -n "$SB_STATE" ]; then
-    echo "Error: Secure Boot is enabled. Please disable it before running this script."
+# Check if Secure Boot is enabled
+sbstate=$(mokutil --sb-state)
+if [[ "$sbstate" == *"SecureBoot enabled"* ]]; then
+    echo "Secure Boot is enabled. Exiting script."
     exit 1
 fi
 
-# Create the directory to store the keys
-mkdir -p $KEY_DIR
+echo "Secure Boot is disabled. Continuing with key generation..."
 
-# Cleanup existing keys
-cleanup_keys
-
-cd $KEY_DIR
-
-# Generate the Platform Key (PK) with configuration
-openssl req -new -x509 -newkey rsa:2048 -keyout $PK_KEY.key -out $PK_KEY.crt -nodes -days 3650 -config $CONFIG_FILE
-cert-to-efi-sig-list -g $(uuidgen) $PK_KEY.crt $PK_KEY.esl
-sign-efi-sig-list -c $PK_KEY.crt -k $PK_KEY.key PK $PK_KEY.esl $PK_KEY.auth
-
-# Generate the Key Exchange Key (KEK) with configuration
-openssl req -new -x509 -newkey rsa:2048 -keyout $KEK_KEY.key -out $KEK_KEY.crt -nodes -days 3650 -config $CONFIG_FILE
-cert-to-efi-sig-list -g $(uuidgen) $KEK_KEY.crt $KEK_KEY.esl
-sign-efi-sig-list -c $PK_KEY.crt -k $PK_KEY.key KEK $KEK_KEY.esl $KEK_KEY.auth
-
-# Generate the Database Key (db) with configuration
-openssl req -new -x509 -newkey rsa:2048 -keyout $DB_KEY.key -out $DB_KEY.crt -nodes -days 3650 -config $CONFIG_FILE
-cert-to-efi-sig-list -g $(uuidgen) $DB_KEY.crt $DB_KEY.esl
-sign-efi-sig-list -c $KEK_KEY.crt -k $KEK_KEY.key db $DB_KEY.esl $DB_KEY.auth
-
-# Enroll keys using efi-updatevar
-efi-updatevar -f $PK_KEY.auth PK
-if [ $? -ne 0 ]; then
-    echo "Failed to enroll Platform Key (PK)."
-    exit 1
+# Ensure the script is run with root privileges
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
 fi
 
-efi-updatevar -f $KEK_KEY.auth KEK
-if [ $? -ne 0 ]; then
-    echo "Failed to enroll Key Exchange Key (KEK)."
-    exit 1
-fi
+# Create directories if they don't exist
+mkdir -p /keys/cfg /keys/esl /keys/auth /keys/bak
 
-efi-updatevar -f $DB_KEY.auth db
-if [ $? -ne 0 ]; then
-    echo "Failed to enroll Database Key (db)."
-    exit 1
-fi
+# Generate Platform Key (PK)
+echo "Generating Platform Key (PK)..."
+openssl req -x509 -sha256 -days 5490 -outform PEM \
+    -config /keys/cfg/PK.cfg \
+    -keyout /keys/PK.key -out /keys/PK.pem
+openssl x509 -text -noout -inform PEM -in /keys/PK.pem
 
-# Display completion message
-echo "Secure Boot keys have been generated, signed, and enrolled successfully. Keys are stored in $KEY_DIR."
+# Copy configuration and modify for Key Exchange Key (KEK)
+echo "Copying and modifying configuration for Key Exchange Key (KEK)..."
+cp -v /keys/cfg/{PK,KEK}.cfg
+sed -i 's/Platform Key/Key Exchange Key/g' /keys/cfg/KEK.cfg
+
+# Generate KEK
+echo "Generating Key Exchange Key (KEK)..."
+openssl req -x509 -sha256 -days 5490 -outform PEM \
+    -config /keys/cfg/KEK.cfg \
+    -keyout /keys/KEK.key -out /keys/KEK.pem
+openssl x509 -text -noout -inform PEM -in /keys/KEK.pem
+
+# Copy configuration and modify for Signature Database (db)
+echo "Copying and modifying configuration for Signature Database (db)..."
+cp -v /keys/cfg/{PK,db}.cfg
+sed -i 's/Platform Key/Signature Database/g' /keys/cfg/db.cfg
+
+# Generate db
+echo "Generating Signature Database (db)..."
+openssl req -x509 -sha256 -days 5490 -outform PEM \
+    -config /keys/cfg/db.cfg \
+    -keyout /keys/db.key -out /keys/db.pem
+openssl x509 -text -noout -inform PEM -in /keys/db.pem
+
+# List keys
+ls -l /keys | grep -v ^d
+
+# Generate GUID and save to file
+echo "$(uuidgen --random)" > /keys/guid.txt
+cat /keys/guid.txt
+
+# Convert certificates to EFI Signature Lists
+cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/PK.pem /keys/esl/PK.esl
+sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key PK /keys/esl/PK.esl /keys/auth/PK.auth
+
+cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/KEK.pem /keys/esl/KEK.esl
+sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key KEK /keys/esl/KEK.esl /keys/auth/KEK.auth
+
+cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/db.pem /keys/esl/db.esl
+sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/KEK.pem -k /keys/KEK.key db /keys/esl/db.esl /keys/auth/db.auth
+
+# List auth keys
+ls -l /keys/auth/
+
+# Update EFI variables
+efi-updatevar -f /keys/auth/db.auth db
+efi-updatevar -f /keys/auth/KEK.auth KEK
+efi-updatevar -f /keys/auth/PK.auth PK
+
+# Read EFI variables
+efi-readvar
+
+# Check boot status
+bootctl status --no-pager
+
+# Sign the shim binary
+echo "Signing the shim binary..."
+pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
+cp -v /boot/efi/EFI/fedora/shimx64.efi /keys/bak/
+pesign -r -u0 -i /boot/efi/EFI/fedora/shimx64.efi -o /boot/efi/EFI/fedora/shimx64.efi.empty
+pesign -S -i /boot/efi/EFI/fedora/shimx64.efi.empty
+sbsign /boot/efi/EFI/fedora/shimx64.efi.empty --key /keys/db.key --cert /keys/db.pem --output /boot/efi/EFI/fedora/shimx64.efi
+pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
+rm /boot/efi/EFI/fedora/shimx64.efi.empty
+
+# Sign the kernel
+echo "Signing the kernel..."
+pesign -S -i /boot/vmlinuz-$(uname -r)
+sbsign /boot/vmlinuz-$(uname -r) --key /keys/db.key --cert /keys/db.pem --output /boot/vmlinuz-$(uname -r)
+pesign -S -i /boot/vmlinuz-$(uname -r)
+
+# List trusted keys
+keyctl list %:.builtin_trusted_keys
+
+echo "Script completed successfully."

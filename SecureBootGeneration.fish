@@ -14,12 +14,12 @@ end
 
 # Function to print the script author information
 function print_author_info
-    echo -e "Script made by \e[32mcsargent04\e[0m, Undergraduate student at the \e[32mUniversity of Hartford\e[0m"
+    echo -e "Script made by \e[32mswoftii04\e[0m, Undergraduate student at the \e[32mUniversity of Hartford\e[0m"
 end
 
 # Function to set default values for PK and DB keys
 function set_default_values
-    set -g commonName "csargent04 Platform Key"
+    set -g commonName "swoftii0404 Platform Key"
     set -g emailAddress "csargent@hartford.edu"
     set -g countryName "US"
     set -g stateOrProvinceName "CT"
@@ -30,7 +30,7 @@ function prompt_custom_values
     read -P "Enter Common Name (default: $commonName): " input
     set -g commonName (string trim $input)
     if test -z "$commonName"
-        set -g commonName "csargent04 Platform Key"
+        set -g commonName "swoftii0404 Platform Key"
     end
 
     read -P "Enter Email Address (default: $emailAddress): " input

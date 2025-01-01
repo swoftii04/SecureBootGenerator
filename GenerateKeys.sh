@@ -10,12 +10,12 @@ print_error() {
 
 # Function to print the script author information
 print_author_info() {
-    echo -e "Script made by \e[32mcsargent04\e[0m, Undergraduate student at the \e[32mUniversity of Hartford\e[0m"
+    echo -e "Script made by \e[32mswoftii04\e[0m, Undergraduate student at the \e[32mUniversity of Hartford\e[0m"
 }
 
 # Function to set default values for PK and DB keys
 set_default_values() {
-    commonName="csargent04 Platform Key"
+    commonName="swoftii0404 Platform Key"
     emailAddress="csargent@hartford.edu"
     countryName="US"
     stateOrProvinceName="CT"

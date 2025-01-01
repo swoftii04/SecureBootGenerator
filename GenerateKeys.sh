@@ -8,36 +8,35 @@ print_error() {
     echo -e "\e[33m$1\e[0m"
 }
 
-# Print the script author information with "University of Hartford" in blue
-echo -e "Script made by \e[34mcsargent04\e[0m, Undergraduate student at the \e[34mUniversity of Hartford\e[0m"
-
-echo "Starting Secure Boot Key Generation Script..."
-
-prompt_user() {
-    local input
-    while [[ -z "$commonName" ]]; do
-        read -p "Enter commonName (default: csargent04 Platform Key): " input
-        commonName=${input:-"csargent04 Platform Key"}
-    done
-
-    while [[ -z "$emailAddress" ]]; do
-        read -p "Enter emailAddress (default: csargent@hartford.edu): " input
-        emailAddress=${input:-"csargent@hartford.edu"}
-    done
-
-    while [[ -z "$countryName" ]]; do
-        read -p "Enter countryName (default: US): " input
-        countryName=${input:-"US"}
-    done
-
-    while [[ -z "$stateOrProvinceName" ]]; do
-        read -p "Enter stateOrProvinceName (default: CT): " input
-        stateOrProvinceName=${input:-"CT"}
-    done
+# Function to print the script author information
+print_author_info() {
+    echo -e "Script made by \e[32mcsargent04\e[0m, Undergraduate student at the \e[32mUniversity of Hartford\e[0m"
 }
 
+# Function to set default values for PK and DB keys
+set_default_values() {
+    commonName="csargent04 Platform Key"
+    emailAddress="csargent@hartford.edu"
+    countryName="US"
+    stateOrProvinceName="CT"
+}
+
+# Function to prompt the user for custom key information
+prompt_custom_values() {
+    read -p "Enter Common Name (default: ${commonName}): " input
+    commonName="${input:-$commonName}"
+    read -p "Enter Email Address (default: ${emailAddress}): " input
+    emailAddress="${input:-$emailAddress}"
+    read -p "Enter Country Name (default: ${countryName}): " input
+    countryName="${input:-$countryName}"
+    read -p "Enter State or Province Name (default: ${stateOrProvinceName}): " input
+    stateOrProvinceName="${input:-$stateOrProvinceName}"
+}
+
+# Function to create a configuration file
 create_config_file() {
     local filename=$1
+    local keyName=$2
     cat <<EOF > $filename
 [ req ]
 default_bits         = 4096
@@ -49,7 +48,7 @@ distinguished_name   = my_dist_name
 x509_extensions      = my_x509_exts
 
 [ my_dist_name ]
-commonName           = $commonName
+commonName           = $commonName $keyName
 emailAddress         = $emailAddress
 countryName          = $countryName
 stateOrProvinceName  = $stateOrProvinceName
@@ -63,21 +62,15 @@ authorityKeyIdentifier = keyid,issuer
 EOF
 }
 
+# Function to manage the creation of configuration files
 manage_config_file() {
     local filename=$1
-    if [ -f "$filename" ]; then
-        read -p "$filename already exists. Do you want to overwrite it? (y/n): " choice
-        if [ "$choice" != "y" ]; then
-            echo "Skipping creation of $filename."
-            return 1
-        fi
-    fi
-    prompt_user
-    create_config_file "$filename"
+    local keyName=$2
+    create_config_file "$filename" "$keyName"
     echo "$filename has been created successfully."
-    return 0
 }
 
+# Function to check for existing keys
 check_existing_keys() {
     local variables=("PK" "KEK" "db")
     for var in "${variables[@]}"; do
@@ -93,100 +86,126 @@ check_existing_keys() {
     done
 }
 
-sbstate=$(mokutil --sb-state)
-if [[ "$sbstate" == *"SecureBoot enabled"* ]]; then
-    print_error "Secure Boot is enabled. Exiting script."
-    exit 1
-fi
+# Function to handle key generation
+handle_key_generation() {
+    print_author_info
+    echo "Starting Secure Boot Key Generation Script..."
 
-echo "Secure Boot is disabled. Continuing with key generation..."
-
-if [[ $EUID -ne 0 ]]; then
-    print_error "This script must be run as root"
-    exit 1
-fi
-
-check_existing_keys
-
-mkdir -p /keys/cfg /keys/esl /keys/auth /keys/bak
-
-if ! manage_config_file "/keys/cfg/PK.cfg"; then
-    exit 0
-fi
-
-for config in KEK.cfg DB.cfg; do
-    if [ -f "/keys/cfg/$config" ]; then
-        read -p "/keys/cfg/$config already exists. Do you want to overwrite it? (y/n): " choice
-        if [ "$choice" != "y" ]; then
-            echo "Skipping creation of /keys/cfg/$config."
-            continue
-        fi
+    sbstate=$(mokutil --sb-state)
+    if [[ "$sbstate" == *"SecureBoot enabled"* ]]; then
+        print_error "Secure Boot is enabled. Exiting script."
+        exit 1
     fi
-    cp /keys/cfg/PK.cfg /keys/cfg/$config
-    sed -i "s/Platform Key/${config%.*} Key/g" /keys/cfg/$config
-    echo "/keys/cfg/$config has been created successfully."
-done
 
-for config in PK.cfg KEK.cfg DB.cfg; do
-    openssl req -new -config /keys/cfg/$config -keyout /dev/null -out /dev/null || { print_error "Validation failed for /keys/cfg/$config"; exit 1; }
-done
+    echo "Secure Boot is disabled. Continuing with key generation..."
 
-echo "Generating Platform Key (PK)..."
-openssl req -x509 -sha256 -days 5490 -outform PEM \
-    -config /keys/cfg/PK.cfg \
-    -keyout /keys/PK.key -out /keys/PK.pem
-openssl x509 -text -noout -inform PEM -in /keys/PK.pem
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This script must be run as root"
+        exit 1
+    fi
 
-echo "Generating Key Exchange Key (KEK)..."
-openssl req -x509 -sha256 -days 5490 -outform PEM \
-    -config /keys/cfg/KEK.cfg \
-    -keyout /keys/KEK.key -out /keys/KEK.pem
-openssl x509 -text -noout -inform PEM -in /keys/KEK.pem
+    check_existing_keys
 
-echo "Generating Signature Database (db)..."
-openssl req -x509 -sha256 -days 5490 -outform PEM \
-    -config /keys/cfg/db.cfg \
-    -keyout /keys/db.key -out /keys/db.pem
-openssl x509 -text -noout -inform PEM -in /keys/db.pem
+    # Create necessary directories if they don't exist
+    mkdir -p /keys/cfg /keys/esl /keys/auth /keys/bak
 
-ls -l /keys | grep -v ^d
+    # Check if necessary key config files exist
+    if [[ -d "/secure-boot-keys" && -n "$(ls -A /secure-boot-keys 2>/dev/null)" ]]; then
+        read -p "Existing secure boot keys found. Do you want to use the existing keys? (y/n): " use_existing
+        if [[ "$use_existing" == "y" ]]; then
+            cp /secure-boot-keys/* /keys/cfg/
+            echo "Using existing key configs."
+        else
+            read -p "Do you want to overwrite the existing keys and create new ones? (y/n): " create_new
+            if [[ "$create_new" != "y" ]]; then
+                print_error "Required keys are missing. Please re-run the script and choose 'y' to create new keys."
+                exit 2
+            fi
+            rm -rf /secure-boot-keys/*
+            create_all_configs
+        fi
+    else
+        read -p "No existing keys found. Do you want to create new keys? (y/n): " create_new
+        if [[ "$create_new" != "y" ]]; then
+            print_error "Required keys are missing. Please re-run the script and choose 'y' to create new keys."
+            exit 2
+        fi
+        create_all_configs
+    fi
 
-echo "$(uuidgen --random)" > /keys/guid.txt
-cat /keys/guid.txt
+    # Generate keys
+    echo "Generating Platform Key (PK)..."
+    openssl req -x509 -sha256 -days 5490 -outform PEM \
+        -config /keys/cfg/PK.cfg \
+        -keyout /keys/PK.key -out /keys/PK.pem
+    openssl x509 -text -noout -inform PEM -in /keys/PK.pem
 
-cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/PK.pem /keys/esl/PK.esl
-sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key PK /keys/esl/PK.esl /keys/auth/PK.auth
+    echo "Generating Key Exchange Key (KEK)..."
+    openssl req -x509 -sha256 -days 5490 -outform PEM \
+        -config /keys/cfg/KEK.cfg \
+        -keyout /keys/KEK.key -out /keys/KEK.pem
+    openssl x509 -text -noout -inform PEM -in /keys/KEK.pem
 
-cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/KEK.pem /keys/esl/KEK.esl
-sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key KEK /keys/esl/KEK.esl /keys/auth/KEK.auth
+    echo "Generating Signature Database (db)..."
+    openssl req -x509 -sha256 -days 5490 -outform PEM \
+        -config /keys/cfg/db.cfg \
+        -keyout /keys/db.key -out /keys/db.pem
+    openssl x509 -text -noout -inform PEM -in /keys/db.pem
 
-cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/db.pem /keys/esl/db.esl
-sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/KEK.pem -k /keys/KEK.key db /keys/esl/db.esl /keys/auth/db.auth
+    ls -l /keys | grep -v ^d
 
-ls -l /keys/auth/
+    echo "$(uuidgen --random)" > /keys/guid.txt
+    cat /keys/guid.txt
 
-efi-updatevar -f /keys/auth/db.auth db
-efi-updatevar -f /keys/auth/KEK.auth KEK
-efi-updatevar -f /keys/auth/PK.auth PK
+    cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/PK.pem /keys/esl/PK.esl
+    sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key PK /keys/esl/PK.esl /keys/auth/PK.auth
 
-efi-readvar
+    cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/KEK.pem /keys/esl/KEK.esl
+    sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/PK.pem -k /keys/PK.key KEK /keys/esl/KEK.esl /keys/auth/KEK.auth
 
-bootctl status --no-pager
+    cert-to-efi-sig-list -g "$(< /keys/guid.txt)" /keys/db.pem /keys/esl/db.esl
+    sign-efi-sig-list -g "$(< /keys/guid.txt)" -t "$(date +'%F %T')" -c /keys/KEK.pem -k /keys/KEK.key db /keys/esl/db.esl /keys/auth/db.auth
 
-echo "Signing the shim binary..."
-pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
-cp -v /boot/efi/EFI/fedora/shimx64.efi /keys/bak/
-pesign -r -u0 -i /boot/efi/EFI/fedora/shimx64.efi -o /boot/efi/EFI/fedora/shimx64.efi.empty
-pesign -S -i /boot/efi/EFI/fedora/shimx64.efi.empty
-sbsign /boot/efi/EFI/fedora/shimx64.efi.empty --key /keys/db.key --cert /keys/db.pem --output /boot/efi/EFI/fedora/shimx64.efi
-pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
-rm /boot/efi/EFI/fedora/shimx64.efi.empty
+    ls -l /keys/auth/
 
-echo "Signing the kernel..."
-pesign -S -i /boot/vmlinuz-$(uname -r)
-sbsign /boot/vmlinuz-$(uname -r) --key /keys/db.key --cert /keys/db.pem --output /boot/vmlinuz-$(uname -r)
-pesign -S -i /boot/vmlinuz-$(uname -r)
+    efi-updatevar -f /keys/auth/db.auth db
+    efi-updatevar -f /keys/auth/KEK.auth KEK
+    efi-updatevar -f /keys/auth/PK.auth PK
 
-keyctl list %:.builtin_trusted_keys
+    efi-readvar
 
-echo "Script completed successfully, please reboot into firmware setup and enable secure boot..."
+    bootctl status --no-pager
+
+    echo "Signing the shim binary..."
+    pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
+    cp -v /boot/efi/EFI/fedora/shimx64.efi /keys/bak/
+    pesign -r -u0 -i /boot/efi/EFI/fedora/shimx64.efi -o /boot/efi/EFI/fedora/shimx64.efi.empty
+    pesign -S -i /boot/efi/EFI/fedora/shimx64.efi.empty
+    sbsign /boot/efi/EFI/fedora/shimx64.efi.empty --key /keys/db.key --cert /keys/db.pem --output /boot/efi/EFI/fedora/shimx64.efi
+    pesign -S -i /boot/efi/EFI/fedora/shimx64.efi
+    rm /boot/efi/EFI/fedora/shimx64.efi.empty
+
+    echo "Signing the kernel..."
+    pesign -S -i /boot/vmlinuz-$(uname -r)
+    sbsign /boot/vmlinuz-$(uname -r) --key /keys/db.key --cert /keys/db.pem --output /boot/vmlinuz-$(uname -r)
+    pesign -S -i /boot/vmlinuz-$(uname -r)
+
+    keyctl list %:.builtin_trusted_keys
+
+    echo "Script completed successfully, please reboot into firmware setup and enable secure boot..."
+}
+
+# Function to create all necessary configuration files
+create_all_configs() {
+    # Prompt for custom values once
+    set_default_values
+    prompt_custom_values
+
+    # Create all keys with the same info
+    manage_config_file "/keys/cfg/PK.cfg" "Platform Key"
+    manage_config_file "/keys/cfg/KEK.cfg" "KEK Key"
+    manage_config_file "/keys/cfg/db.cfg" "db Key"
+}
+
+# Run the main function to handle key generation
+handle_key_generation

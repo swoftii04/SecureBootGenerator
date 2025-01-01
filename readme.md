@@ -15,7 +15,38 @@
 Before running the script, ensure you have the following installed on your system:
 
 - OpenSSL
-- Required system permissions to configure secure boot
+- Efitools
+- Mokutil
+- Util-linux (for uuidgen)
+- Pesign
+- Sbsigntool
+- Systemd-boot
+
+## Installation
+
+### Installing Dependencies
+
+#### Ubuntu/Debian
+1. Open a terminal.
+2. Run the following commands to install the required dependencies:
+    ```bash
+    sudo apt update
+    sudo apt install -y openssl efitools mokutil uuid-runtime pesign sbsigntool systemd-boot
+    ```
+
+#### Fedora
+1. Open a terminal.
+2. Run the following command to install the required dependencies:
+    ```bash
+    sudo dnf install -y openssl efitools mokutil util-linux pesign sbsigntool systemd-boot
+    ```
+
+#### Arch Linux
+1. Open a terminal.
+2. Run the following command to install the required dependencies:
+    ```bash
+    sudo pacman -Sy openssl efitools mokutil util-linux pesign sbsigntools systemd
+    ```
 
 ## Usage
 
@@ -34,7 +65,7 @@ Before running the script, ensure you have the following installed on your syste
 
 3. Run the script:
     ```bash
-    ./secure_boot_generator.sh
+    sudo ./secure_boot_generator.sh
     ```
 
 ### Running the Script with Fish
@@ -52,7 +83,7 @@ Before running the script, ensure you have the following installed on your syste
 
 3. Run the script:
     ```fish
-    ./secure_boot_generator.sh
+    sudo ./secure_boot_generator.sh
     ```
 
 ## Script Details

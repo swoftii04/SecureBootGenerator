@@ -2,7 +2,7 @@
 
 ## Overview
 
-`SecureBootGenerator` is a shell script designed to assist in generating secure boot keys and configuration settings for your system. This script simplifies the process of setting up secure boot by automating key generation and configuration steps.
+`SecureBootGenerator` is a shell script made for **Fedora systems** designed to assist in generating secure boot keys and configuration settings for your system. This script simplifies the process of setting up secure boot by automating key generation and configuration steps.
 
 ## Features
 
